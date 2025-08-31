@@ -1,0 +1,41 @@
+server:
+  addr: 8080
+
+sse:
+  heartbeatSec: 15 # 心跳时间
+  clientChanSize: 64
+  writeTimeoutSec: 0   # 0 表示不设写超时
+
+hub:
+  shards: 256
+  dropSlowClient: true
+
+redis:
+  addr: "192.168.2.22:6379"
+  passwd: "njjd@123"
+  db: 0
+  streams:
+    enabled: true
+    maxlen: 200000       # 每个 topic 的保留条数（近端回放）
+  pubsub:
+    pattern: "sse:pub:*"
+    pump_workers: 4      # 并行解析/分发 worker
+
+persistence:
+  enabled: true
+  kind: "mysql"          # "mysql" | "postgres"
+  dsn: "root:njjd@123@tcp(192.168.2.22:3306)/sse?parseTime=true"
+  batch:
+    enabled: true
+    maxItems: 500
+    maxBytes: 524288    # 512KB
+    flushIntervalMs: 10
+  topics:
+    include: [ "*" ]       # 支持通配，空表示全部不持久
+    exclude: [ "metrics.*" ]
+  retention:
+    days: 7              # 保留天数（可由离线任务定期清理）
+
+publish:
+  defaultMaxlen: 200000
+  rate_limit_qps: 0      # 0 关闭限流

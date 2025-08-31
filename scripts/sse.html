@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE 测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .control-buttons {
+            margin-top: 20px;
+        }
+        .status {
+            margin-top: 10px;
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+<h1>SSE 测试页面</h1>
+<div class="control-buttons">
+    <input type="number" id="userIdInput" placeholder="输入 UserId" />
+    <input type="text" id="clientTypeInput" placeholder="输入 Client Type" />
+    <input type="text" id="topicsInput" placeholder="输入 Topics (用逗号分隔)" />
+    <button id="startSingleButton">启动单个连接</button>
+    <button id="stopSingleButton">停止单个连接</button>
+    <button id="startAllButton">启动所有连接</button>
+    <button id="stopAllButton">停止所有连接</button>
+</div>
+<div id="messages"></div>
+<div id="status" class="status"></div>
+
+<script>
+    const eventSources = {}; // 存储多个 EventSource 实例
+
+    // 创建一个 EventSource 连接
+    function startConnection(userId, clientType, topics) {
+        const topicsParam = encodeURIComponent(topics.join(','));
+        const eventSource = new EventSource(`http://localhost:8080/sse?userId=${userId}&clientType=${clientType}&topics=${topicsParam}`);
+
+        eventSources[userId] = eventSource; // 存储连接
+
+        eventSource.onmessage = function(event) {
+            appendMessage(`用户 ${userId} 接收到消息：${event.data}`);
+        };
+
+        eventSource.onerror = function(event) {
+            displayStatus(`用户 ${userId} 连接错误。`, 'error');
+            eventSource.close(); // 关闭连接
+            delete eventSources[userId]; // 从对象中删除连接
+        };
+
+        eventSource.onopen = function(event) {
+            displayStatus(`用户 ${userId} 的连接已打开`);
+        };
+    }
+
+    // 停止连接
+    function stopConnection(userId) {
+        const eventSource = eventSources[userId];
+        if (eventSource) {
+            eventSource.close(); // 关闭连接
+            delete eventSources[userId]; // 从对象中删除连接
+            displayStatus(`用户 ${userId} 的连接已停止`);
+        }
+    }
+
+    // 添加消息到消息盒
+    function appendMessage(message) {
+        const messageContainer = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message';
+        messageDiv.textContent = message;
+        messageContainer.appendChild(messageDiv);
+    }
+
+    // 显示状态信息
+    function displayStatus(message, type = 'status') {
+        const statusContainer = document.getElementById('status');
+        statusContainer.textContent = message;
+        statusContainer.className = type === 'error' ? 'error' : 'status';
+    }
+
+    // 启动单个连接按钮的事件处理
+    document.getElementById('startSingleButton').onclick = function() {
+        const userId = document.getElementById('userIdInput').value;
+        const clientType = document.getElementById('clientTypeInput').value;
+        const topicsInput = document.getElementById('topicsInput').value;
+
+        if (!userId || isNaN(userId) || userId <= 0) {
+            alert('请提供有效的 UserId。');
+            return;
+        }
+        if (!clientType) {
+            alert('请提供有效的 Client Type。');
+            return;
+        }
+        const topics = topicsInput.split(',').map(topic => topic.trim()).filter(topic => topic);
+        if (topics.length === 0) {
+            alert('请提供有效的 Topics。');
+            return;
+        }
+
+        // 直接启动连接，不判断是否已存在
+        startConnection(userId, clientType, topics);
+    };
+
+    // 停止单个连接按钮的事件处理
+    document.getElementById('stopSingleButton').onclick = function() {
+        const userId = document.getElementById('userIdInput').value;
+        if (!userId) {
+            alert('请提供有效的 UserId。');
+            return;
+        }
+        stopConnection(userId);
+    };
+
+    // 启动所有连接按钮的事件处理
+    document.getElementById('startAllButton').onclick = function() {
+        const clientType = document.getElementById('clientTypeInput').value;
+        const topicsInput = document.getElementById('topicsInput').value;
+        const topics = topicsInput.split(',').map(topic => topic.trim()).filter(topic => topic);
+
+        if (!clientType) {
+            alert('请提供有效的 Client Type。');
+            return;
+        }
+        if (topics.length === 0) {
+            alert('请提供有效的 Topics。');
+            return;
+        }
+
+        // 启动所有连接，包括新的连接
+        Object.keys(eventSources).forEach(userId => {
+            stopConnection(userId); // 先停止已存在的连接
+        });
+
+        // 对于每个用户 ID 启动连接
+        const userIds = [...new Set([1, 2, 3])]; // 示例用户 ID，可以根据实际需要更新
+        userIds.forEach(userId => {
+            startConnection(userId, clientType, topics);
+        });
+    };
+
+    // 停止所有连接按钮的事件处理
+    document.getElementById('stopAllButton').onclick = function() {
+        for (const userId in eventSources) {
+            stopConnection(userId); // 停止所有连接
+        }
+        displayStatus("所有连接已停止");
+    };
+</script>
+</body>
+</html>

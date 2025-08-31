@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package grpc; // 根据需要修改为你的包名
+option go_package = "./"; // 修改为您的 Go 包路径
+
+
+service MessageService {
+  rpc PublishByTopic(PublishByTopicRequest) returns (Empty);
+  rpc PublishByUserId(PublishByUserIdRequest) returns (Empty);
+  rpc PublishByClientType(PublishByClientTypeRequest) returns (Empty);
+  rpc PublishToClient(PublishToClientRequest) returns (Empty);
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+message Empty {}
+
+message PublishByTopicRequest {
+  string topic = 1;
+  string message = 2;
+}
+
+message PublishByUserIdRequest {
+  int64 userId = 1;
+  string message = 2;
+}
+
+message PublishByClientTypeRequest {
+  string clientType = 1;
+  string message = 2;
+}
+
+message PublishToClientRequest {
+  string clientType = 1;
+  int64 userId = 2;
+  string message = 3;
+}
+
+message StatusRequest {
+  // 根据需要传递参数
+}
+
+message StatusResponse {
+  repeated ClientStat stats = 1; // 假设客户端状态是一个数组
+}
+
+message ClientStat {
+  string clientId = 1; // 假设客户端ID
+  string status = 2;    // 客户端状态
+  // 添加其它需要的字段
+}
