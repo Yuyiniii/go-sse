@@ -64,6 +64,10 @@ type config struct {
 		DefaultMaxlen int `yaml:"defaultMaxlen"` // 默认最大长度
 		RateLimitQps  int `yaml:"rateLimitQps"`  // 限流 QPS
 	} `yaml:"publish"`
+
+	Grpc struct {
+		Enabled bool `yaml:"enabled"`
+	} `yaml:"grpc"`
 }
 
 func loadConfig() *config {
@@ -82,7 +86,6 @@ func loadConfig() *config {
 		panic(err)
 	}
 	var cfg config
-	print(vip.AllSettings())
 	err = vip.Unmarshal(&cfg)
 	if err != nil {
 		panic(err)

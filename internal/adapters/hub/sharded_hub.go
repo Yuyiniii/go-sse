@@ -24,10 +24,17 @@ type ShardedHub struct {
 }
 
 func (h *ShardedHub) PublishByUserId(userId int64, message string) {
+	// 读锁 (不写)
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
 	int64s := h.userMapping[userId]
 
 	for _, clients := range int64s {
 		client := h.clients[clients]
+		// 客户端写锁
+		client.mu.Lock()
+		client.mu.Unlock()
 		select {
 		case client.ch <- []byte(message): // 尝试发送消息到客户端的通道
 			fmt.Println("发送成功")
@@ -43,10 +50,17 @@ func (h *ShardedHub) PublishByUserId(userId int64, message string) {
 }
 
 func (h *ShardedHub) PublishByClientType(clientType string, message string) {
+	// 读锁 (不写)
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
 	int64s := h.clientTyp[clientType]
 
 	for _, clients := range int64s {
 		client := h.clients[clients]
+		// 客户端写锁
+		client.mu.Lock()
+		client.mu.Unlock()
 		select {
 		case client.ch <- []byte(message): // 尝试发送消息到客户端的通道
 			fmt.Println("发送成功")
@@ -57,15 +71,22 @@ func (h *ShardedHub) PublishByClientType(clientType string, message string) {
 }
 
 func (h *ShardedHub) PublishToClient(clientType string, userId int64, message string) {
+	// 读锁 (不写)
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
 	// 根据 userId 获取与用户相关联的客户端 ID 列表
 	clientIDs := h.userMapping[userId]
 
 	// 遍历客户端 ID，查找符合类型的客户端
 	for _, clientID := range clientIDs {
 		client := h.clients[clientID]
-
+		// 客户端写锁
+		client.mu.Lock()
+		client.mu.Unlock()
 		// 检查客户端类型
 		if client.clientType == clientType {
+
 			select {
 			case client.ch <- []byte(message): // 尝试发送消息到客户端的通道
 				fmt.Println("Message sent successfully to client:", clientID)
@@ -76,18 +97,41 @@ func (h *ShardedHub) PublishToClient(clientType string, userId int64, message st
 		}
 	}
 }
-
 func (h *ShardedHub) HeaderBeat(byte []byte) {
+	// 获取读锁
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+	log.Printf("top3: clientsSize: %d\n", len(h.clients))
+
 	for _, client := range h.clients {
-		client.ch <- byte
+		client.mu.Lock()
+		// 使用通道中断来确认客户端连接状态
+		if client.ch == nil {
+			log.Printf("客户端 %d 的通道已关闭，跳过发送\n", client.id)
+			client.mu.Unlock()
+			continue
+		}
+
+		select {
+		case client.ch <- byte: // 尝试发送数据
+		default: // 通道已满或关闭
+			log.Printf("客户端 %d 已关闭通道，无法发送数据\n", client.id)
+		}
+		client.mu.Unlock()
 	}
 }
-
 func (h *ShardedHub) Broadcast(topic string, payload []byte) {
+	// 读锁 (不写)
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
 
 	// 遍历所有客户端并发送消息
 	for userId, client := range h.clients {
+		// 客户端写锁
+		client.mu.Lock()
+		client.mu.Unlock()
 		if makeStringMap(topic, client.topics) {
+
 			select {
 			case client.ch <- []byte(payload): // 尝试发送消息到客户端的通道
 				fmt.Println("发送成功")
@@ -104,26 +148,48 @@ func (h *ShardedHub) Broadcast(topic string, payload []byte) {
 
 // ShardedHub 的 Remove 方法
 func (h *ShardedHub) Remove(c *ports.Client) {
+	log.Printf("客户端 %d 断开连接, Remove 关闭连接\n", c.ID)
+
 	c.Mu.Lock() // 确保安全访问
 	defer c.Mu.Unlock()
 
-	// 确保客户端存在且通道未关闭
+	log.Printf("top1: clientsSize: %d\n", len(h.clients))
+
+	// 确保外部客户端的发送通道未关闭
 	if c.SendCh != nil {
+		log.Printf("外部客户端 %d 正在关闭\n", c.ID)
+
 		close(c.SendCh) // 关闭发送通道
 		c.SendCh = nil  // 设置为 nil，避免后续操作冲突
 	}
-	<-c.Done
 
+	// 使用写锁获取对 clientsMu 的独占访问权限
+	h.clientsMu.Lock()
+	defer h.clientsMu.Unlock()
 	// 确保检查客户机的存在性
 	if client, exists := h.clients[c.ID]; exists && client != nil {
-		client.close()
+		log.Printf("客户端 %d 正在关闭\n", c.ID)
+
+		// 关闭客户端的通道
+		if client.ch != nil {
+			close(client.ch)
+			client.ch = nil // 保持一致性
+		}
+
+		log.Printf("等待客户 %d 完成清理\n", client.id)
+		client.close()          // 用户定义的 close 方法
 		delete(h.clients, c.ID) // 从 Hub 中移除
 	} else {
 		log.Printf("客户端 %d 不存在或已关闭, 无法移除\n", c.ID)
 	}
-}
 
+	log.Printf("top2: clientsSize: %d\n", len(h.clients))
+}
 func (h *ShardedHub) Stats() []ports.HubStats {
+	// 读锁 (不写)
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
 	data := make([]ports.HubStats, 0)
 
 	// 遍历用户映射
@@ -162,6 +228,10 @@ func NewShardedHub() *ShardedHub {
 // 返回：
 //   - *ports.Client: 返回的客户端句柄供上层使用
 func (h *ShardedHub) NewClient(userId int64, clientType string, topics []string) *ports.Client {
+	// 写锁
+	h.clientsMu.Lock()
+	defer h.clientsMu.Unlock()
+
 	globalID := id.NextGlobalID()
 	c := newClient(globalID, userId, 255, clientType, topics) // 创建 client 实例
 

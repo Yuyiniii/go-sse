@@ -39,3 +39,6 @@ persistence:
 publish:
   defaultMaxlen: 200000
   rate_limit_qps: 0      # 0 关闭限流
+
+Grpc:
+  enabled: false

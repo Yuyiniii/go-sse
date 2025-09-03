@@ -69,12 +69,6 @@ func Sse(hub ports.Hub) http.HandlerFunc {
 
 		client := hub.NewClient(userId, clientType, topics)
 
-		defer func() {
-			log.Printf("客户端 %d 断开连接\n", client.ID)
-			hub.Remove(client)
-			close(client.Done) // 关闭 Done 通道，通知协程退出
-		}()
-
 		// 尝试获取 CloseNotifier
 		cn, ok := w.(http.CloseNotifier)
 		if !ok {
@@ -94,6 +88,7 @@ func Sse(hub ports.Hub) http.HandlerFunc {
 		select {
 		case <-closeNotify:
 			log.Printf("客户端 %d 断开连接 (CloseNotifier)\n", client.ID)
+			hub.Remove(client)
 		case <-client.Done:
 			log.Printf("客户端 %d 断开连接 (client.Done)\n", client.ID)
 		}
